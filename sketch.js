@@ -1,81 +1,61 @@
 let shapes = [];
 let keyMap = {};
-let scaleNotes = [130.81, 138.59, 164.81, 185.00, 207.65, 233.08, 246.94, 261.63]; // C, Db, E, F#, G#, A#, B, C
-
-// Assign each key a shape, base freq from scaleNotes, and color
-let letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-for (let i = 0; i < letters.length; i++) {
-  keyMap[letters[i]] = {
-    type: i % 2 === 0 ? 'circle' : 'square',
-    color: [
-      random([255, 0, 128]),
-      random([255, 0, 128]),
-      random([255, 0, 128])
-    ],
-    baseFreq: scaleNotes[i % scaleNotes.length]
-  };
-}
+let scaleFreqs = [261.63, 277.18, 329.63, 369.99, 415.30, 466.16, 493.88]; // enigmatic scale
+let reverb;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
   noStroke();
-  textAlign(CENTER, CENTER);
-  textSize(32);
+
+  reverb = new p5.Reverb();
+  reverb.set(4, 2); // 4s reverb time, 2 decay
+
+  let keys = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (let i = 0; i < keys.length; i++) {
+    let octave = i < 7 ? 1 : i < 14 ? 2 : 3;
+    keyMap[keys[i]] = scaleFreqs[i % scaleFreqs.length] / Math.pow(2, 1 - octave);
+  }
 }
 
 function draw() {
-  background(0, 30); // slight trail effect
-
+  background(0);
   for (let i = shapes.length - 1; i >= 0; i--) {
     let s = shapes[i];
-
-    // Move shape
     s.x += s.vx;
     s.y += s.vy;
 
-    // Pitch modulation
-    let freqOffset = sin(frameCount * 0.01 + s.offset) * 10;
-    s.osc.freq(s.baseFreq + freqOffset);
-
-    // Update amplitude
     let level = s.amp.getLevel();
     let ampScale = map(level, 0, 0.3, 0.5, 2);
 
     // Draw trail
-    s.trail.push({ x: s.x, y: s.y, opacity: 255 });
-    if (s.trail.length > 20) s.trail.shift();
+    s.trail.push({x: s.x, y: s.y, opacity: 255});
+    if (s.trail.length > 30) s.trail.shift();
     for (let t of s.trail) {
-      fill(s.color[0], s.color[1], s.color[2], t.opacity);
-      if (s.type === 'circle') ellipse(t.x, t.y, 20 * ampScale);
-      else rect(t.x - 10 * ampScale, t.y - 10 * ampScale, 20 * ampScale, 20 * ampScale);
-      t.opacity *= 0.85; // smooth fade
+      fill(255, t.opacity);
+      ellipse(t.x, t.y, 20 * ampScale);
+      t.opacity -= 8;
     }
 
-    // Particle effects
-    for (let j = s.particles.length - 1; j >= 0; j--) {
-      let p = s.particles[j];
-      p.x += p.vx * ampScale;
-      p.y += p.vy * ampScale;
-      p.opacity *= 0.85;
-      if (p.opacity < 1) s.particles.splice(j, 1);
-      else {
-        fill(p.color[0], p.color[1], p.color[2], p.opacity);
-        ellipse(p.x, p.y, p.size * ampScale);
-      }
+    // Glow
+    if (s.glow > 0) {
+      fill(255, 50, 50, s.glow); // red glow
+      ellipse(s.x, s.y, 34 * ampScale);
+      s.glow *= 0.95;
     }
 
-    // Draw main shape
-    fill(s.color[0], s.color[1], s.color[2], s.opacity);
-    let size = map(s.baseFreq + freqOffset, 130, 262, 30, 80) * ampScale;
-    if (s.type === 'circle') ellipse(s.x, s.y, size);
-    else rect(s.x - size/2, s.y - size/2, size, size);
+    // Shape outline (1px)
+    stroke(255);
+    strokeWeight(1);
+    fill(255, s.opacity);
+    ellipse(s.x, s.y, 30 * ampScale);
+    noStroke();
 
-    // Smooth fade out
-    s.opacity *= 0.97;
-    if (s.opacity < 1) {
-      s.osc.amp(0, 1.0, 'expo');
-      s.osc.stop(1.0);
+    s.opacity -= 1;
+    if (s.opacity <= 0) {
+      s.osc.amp(0, 1.5); // smooth fade
+      setTimeout(() => s.osc.stop(), 1600);
       shapes.splice(i, 1);
+      continue;
     }
   }
 }
@@ -85,21 +65,22 @@ function keyPressed() {
   let k = key.toUpperCase();
   if (!keyMap[k]) return;
 
-  let config = keyMap[k];
-
-  let osc;
-  if (config.type === 'circle') osc = new p5.Oscillator('triangle');
-  else osc = new p5.Oscillator('sine');
-
-  osc.freq(config.baseFreq);
+  let freq = keyMap[k];
+  let osc = new p5.Oscillator('triangle');
+  osc.freq(freq);
   osc.start();
-  osc.amp(0.5, 0.1);
+  osc.amp(0.3, 0.05);
 
-  let delay = new p5.Delay();
-  delay.process(osc, 0.3, 0.5, 2000); // dreamy delay
+  // Slight detune for dreaminess
+  osc.freq(freq * (1 + random(-0.002, 0.002)));
 
-  let reverb = new p5.Reverb();
-  reverb.process(osc, 3, 2); // long reverb
+  // Low-pass filter
+  let filter = new p5.LowPass();
+  filter.freq(1200);
+  osc.disconnect();
+  osc.connect(filter);
+
+  reverb.process(filter, 2, 2); // shared global reverb
 
   let amp = new p5.Amplitude();
   amp.setInput(osc);
@@ -107,39 +88,20 @@ function keyPressed() {
   let s = {
     x: random(width),
     y: random(height),
-    vx: random(-1, 1),
-    vy: random(-1, 1),
-    type: config.type,
-    baseFreq: config.baseFreq,
+    vx: random(-2, 2),
+    vy: random(-2, 2),
     osc: osc,
-    color: config.color,
+    amp: amp,
     opacity: 255,
     trail: [],
-    particles: [],
-    amp: amp,
-    offset: random(TWO_PI)
+    glow: 200 // slightly stronger red glow
   };
-
-  // Spawn particles
-  for (let i = 0; i < 10; i++) {
-    s.particles.push({
-      x: s.x, y: s.y,
-      vx: random(-2, 2), vy: random(-2, 2),
-      size: random(5, 15),
-      opacity: 255,
-      color: s.color
-    });
-  }
 
   shapes.push(s);
 }
 
 function keyReleased() {
-  if (shapes.length > 0) {
-    let s = shapes[shapes.length - 1];
-    s.osc.amp(0, 1.0, 'expo');
-    s.osc.stop(1.0);
-  }
+  // fade handled in draw
 }
 
 function windowResized() {
