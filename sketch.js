@@ -1,107 +1,115 @@
 let shapes = [];
-let keyMap = {};
-let scaleFreqs = [261.63, 277.18, 329.63, 369.99, 415.30, 466.16, 493.88]; // enigmatic scale
-let reverb;
+let camZoom = 0;
+
+// Enigmatic scale (C, Db, E, F#, G#, A#, B) over 3 octaves
+let enigmaticFreqs = [
+  277.18, 329.63, 370.00, 415.30, 466.16, 554.37, 622.25, // octave 3
+  739.99, 830.61, 932.33, 1108.73, 1244.51, 1479.98,      // octave 4
+  1661.22, 1864.66, 2217.46, 2489.02, 2959.96, 3322.44    // octave 5
+];
+
+let keysList = "ertyuisdfghjklxcvbnm".split("");
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
   noStroke();
-
-  reverb = new p5.Reverb();
-  reverb.set(4, 2); // 4s reverb time, 2 decay
-
-  let keys = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  for (let i = 0; i < keys.length; i++) {
-    let octave = i < 7 ? 1 : i < 14 ? 2 : 3;
-    keyMap[keys[i]] = scaleFreqs[i % scaleFreqs.length] / Math.pow(2, 1 - octave);
-  }
 }
 
 function draw() {
   background(0);
+
   for (let i = shapes.length - 1; i >= 0; i--) {
     let s = shapes[i];
+
+    // Movement
     s.x += s.vx;
     s.y += s.vy;
 
+    // Pitch modulation
+    let freqOffset = sin(frameCount * 0.02 + s.offset) * 5;
+    s.osc.freq(s.baseFreq + freqOffset);
+
+    // Envelope smoothing
     let level = s.amp.getLevel();
     let ampScale = map(level, 0, 0.3, 0.5, 2);
 
-    // Draw trail
-    s.trail.push({x: s.x, y: s.y, opacity: 255});
-    if (s.trail.length > 30) s.trail.shift();
-    for (let t of s.trail) {
-      fill(255, t.opacity);
-      ellipse(t.x, t.y, 20 * ampScale);
-      t.opacity -= 8;
-    }
+    // Glow pulse
+    let glow = sin(frameCount * 0.1 + s.offset) * 100 + 155;
+    let redGlow = map(level, 0, 0.3, 0, 255);
+    drawingContext.shadowBlur = 20;
+    drawingContext.shadowColor = color(redGlow, 0, 0);
 
-    // Glow
-    if (s.glow > 0) {
-      fill(255, 50, 50, s.glow); // red glow
-      ellipse(s.x, s.y, 34 * ampScale);
-      s.glow *= 0.95;
-    }
+    fill(255, 255, 255, glow);
+    ellipse(s.x, s.y, s.size * ampScale);
 
-    // Shape outline (1px)
-    stroke(255);
+    // Border
+    stroke(255, 0, 0, 150);
     strokeWeight(1);
-    fill(255, s.opacity);
-    ellipse(s.x, s.y, 30 * ampScale);
+    noFill();
+    ellipse(s.x, s.y, s.size * ampScale + 2);
     noStroke();
 
+    // Fade out
     s.opacity -= 1;
     if (s.opacity <= 0) {
-      s.osc.amp(0, 1.5); // smooth fade
-      setTimeout(() => s.osc.stop(), 1600);
+      s.env.triggerRelease();
+      s.osc.stop();
       shapes.splice(i, 1);
-      continue;
     }
   }
 }
 
 function keyPressed() {
   userStartAudio();
-  let k = key.toUpperCase();
-  if (!keyMap[k]) return;
 
-  let freq = keyMap[k];
+  let idx = keysList.indexOf(key.toLowerCase());
+  if (idx === -1) return;
+
+  let freq = enigmaticFreqs[idx % enigmaticFreqs.length];
+
   let osc = new p5.Oscillator('triangle');
   osc.freq(freq);
   osc.start();
-  osc.amp(0.3, 0.05);
 
-  // Slight detune for dreaminess
-  osc.freq(freq * (1 + random(-0.002, 0.002)));
+  // Slight detune for warmth
+  osc.freq(freq * 0.999 + random(-1, 1));
 
-  // Low-pass filter
+  // Filter envelope
   let filter = new p5.LowPass();
-  filter.freq(1200);
+  filter.freq(2000);
+  filter.res(2);
   osc.disconnect();
   osc.connect(filter);
 
-  reverb.process(filter, 2, 2); // shared global reverb
+  // Envelope for smooth fade
+  let env = new p5.Envelope();
+  env.setADSR(0.05, 0.2, 0.3, 1.5);
+  env.setRange(0.5, 0);
+  env.play(osc);
+
+  // Reverb & delay
+  let reverb = new p5.Reverb();
+  reverb.process(osc, 5, 5);
+
+  let delay = new p5.Delay();
+  delay.process(osc, 0.2, 0.4, 2300);
 
   let amp = new p5.Amplitude();
   amp.setInput(osc);
 
-  let s = {
+  shapes.push({
     x: random(width),
     y: random(height),
-    vx: random(-2, 2),
-    vy: random(-2, 2),
+    vx: random(-1, 1),
+    vy: random(-1, 1),
+    baseFreq: freq,
     osc: osc,
     amp: amp,
+    env: env,
+    offset: random(TWO_PI),
     opacity: 255,
-    trail: [],
-    glow: 200 // slightly stronger red glow
-  };
-
-  shapes.push(s);
-}
-
-function keyReleased() {
-  // fade handled in draw
+    size: random(40, 100)
+  });
 }
 
 function windowResized() {
