@@ -1,14 +1,6 @@
 let shapes = [];
-let camZoom = 0;
-
-// Enigmatic scale (C, Db, E, F#, G#, A#, B) over 3 octaves
-let enigmaticFreqs = [
-  277.18, 329.63, 370.00, 415.30, 466.16, 554.37, 622.25, // octave 3
-  739.99, 830.61, 932.33, 1108.73, 1244.51, 1479.98,      // octave 4
-  1661.22, 1864.66, 2217.46, 2489.02, 2959.96, 3322.44    // octave 5
-];
-
-let keysList = "ertyuisdfghjklxcvbnm".split("");
+let keysList = 'ertyuisdfghjklxcvbnm'.split('');
+let scaleIntervals = [0, 1, 4, 7, 10, 13, 16]; // Enigmatic scale, one octave
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -16,99 +8,83 @@ function setup() {
 }
 
 function draw() {
-  background(0);
-
+  background(0, 50); // slight trail effect
   for (let i = shapes.length - 1; i >= 0; i--) {
     let s = shapes[i];
 
-    // Movement
+    // Move
     s.x += s.vx;
     s.y += s.vy;
 
-    // Pitch modulation
-    let freqOffset = sin(frameCount * 0.02 + s.offset) * 5;
-    s.osc.freq(s.baseFreq + freqOffset);
+    // Bounce edges
+    if (s.x < 0 || s.x > width) s.vx *= -1;
+    if (s.y < 0 || s.y > height) s.vy *= -1;
 
-    // Envelope smoothing
-    let level = s.amp.getLevel();
-    let ampScale = map(level, 0, 0.3, 0.5, 2);
-
-    // Glow pulse
-    let glow = sin(frameCount * 0.1 + s.offset) * 100 + 155;
-    let redGlow = map(level, 0, 0.3, 0, 255);
-    drawingContext.shadowBlur = 20;
-    drawingContext.shadowColor = color(redGlow, 0, 0);
-
-    fill(255, 255, 255, glow);
-    ellipse(s.x, s.y, s.size * ampScale);
-
-    // Border
-    stroke(255, 0, 0, 150);
-    strokeWeight(1);
-    noFill();
-    ellipse(s.x, s.y, s.size * ampScale + 2);
-    noStroke();
-
-    // Fade out
+    // Shape fade
     s.opacity -= 1;
     if (s.opacity <= 0) {
-      s.env.triggerRelease();
       s.osc.stop();
       shapes.splice(i, 1);
+      continue;
     }
+
+    // Draw glow
+    push();
+    translate(s.x, s.y);
+    let glow = map(s.opacity, 255, 0, 50, 0);
+    fill(255, glow, glow, s.opacity);
+    stroke(255, glow, glow);
+    strokeWeight(1);
+    if (s.type === 'sphere') ellipse(0, 0, s.size);
+    else rectMode(CENTER), rect(0, 0, s.size, s.size);
+    pop();
   }
+}
+
+function getFreq(idx) {
+  let baseFreq = 130.81; // C3
+  let interval = scaleIntervals[idx % scaleIntervals.length];
+  return baseFreq * pow(2, interval / 12) * random(0.98, 1.02);
 }
 
 function keyPressed() {
   userStartAudio();
-
   let idx = keysList.indexOf(key.toLowerCase());
   if (idx === -1) return;
 
-  let freq = enigmaticFreqs[idx % enigmaticFreqs.length];
+  let freq = getFreq(idx);
+  let type = idx % 2 === 0 ? 'sphere' : 'box';
 
-  let osc = new p5.Oscillator('triangle');
+  let osc = new p5.Oscillator(type === 'sphere' ? 'triangle' : 'sine');
   osc.freq(freq);
   osc.start();
 
-  // Slight detune for warmth
-  osc.freq(freq * 0.999 + random(-1, 1));
-
-  // Filter envelope
   let filter = new p5.LowPass();
-  filter.freq(2000);
-  filter.res(2);
+  filter.freq(1000);
+  filter.res(1.2);
   osc.disconnect();
   osc.connect(filter);
 
-  // Envelope for smooth fade
   let env = new p5.Envelope();
-  env.setADSR(0.05, 0.2, 0.3, 1.5);
-  env.setRange(0.5, 0);
+  env.setADSR(0.05, 0.1, 0.3, 0.5);
+  env.setRange(0.3, 0);
   env.play(osc);
 
-  // Reverb & delay
   let reverb = new p5.Reverb();
-  reverb.process(osc, 5, 5);
+  reverb.process(osc, 1, 1.5);
 
   let delay = new p5.Delay();
-  delay.process(osc, 0.2, 0.4, 2300);
-
-  let amp = new p5.Amplitude();
-  amp.setInput(osc);
+  delay.process(osc, 0.05, 0.25, 500);
 
   shapes.push({
     x: random(width),
     y: random(height),
     vx: random(-1, 1),
     vy: random(-1, 1),
-    baseFreq: freq,
+    size: random(40, 100),
+    type: type,
     osc: osc,
-    amp: amp,
-    env: env,
-    offset: random(TWO_PI),
-    opacity: 255,
-    size: random(40, 100)
+    opacity: 255
   });
 }
 
