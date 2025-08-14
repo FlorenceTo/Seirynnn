@@ -1,105 +1,118 @@
 let shapes = [];
-let keyMap = {};
-let scaleFreqs = [261.63, 277.18, 329.63, 369.99, 415.30, 466.16, 493.88]; // enigmatic scale
-let reverb;
+let texts = [];
+let activeKeys = {};
+let sounds = {};
+let shapesMap = {};
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  let cnv = createCanvas(windowWidth, windowHeight);
+  cnv.parent(document.body);
   noStroke();
+  textAlign(CENTER, CENTER);
+  textSize(32);
 
-  reverb = new p5.Reverb();
-  reverb.set(4, 2); // 4s reverb time, 2 decay
+  texts.push({ text: "Press Keys", alpha: 255 });
 
-  let keys = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  for (let i = 0; i < keys.length; i++) {
-    let octave = i < 7 ? 1 : i < 14 ? 2 : 3;
-    keyMap[keys[i]] = scaleFreqs[i % scaleFreqs.length] / Math.pow(2, 1 - octave);
-  }
+  userStartAudio(); // allow audio
+
+  // Define a simple set of keys with unique sounds and shape properties
+  let keys = [
+    'A','S','D','F','G','H','J','K','L','Q','W','E','R','T'
+  ];
+
+  keys.forEach((k, i) => {
+    // Each key gets a tap/bongo type sound
+    let osc = new p5.Oscillator(random(['triangle','sine','square']));
+    osc.start();
+    osc.amp(0);
+
+    let env = new p5.Envelope();
+    env.setADSR(0.001, 0.1, 0, 0.2);
+    env.setRange(random(0.3,0.6), 0);
+
+    sounds[k] = { osc, env };
+
+    // Each key also has a shape template
+    shapesMap[k] = {
+      sizeX: random(20,60),
+      sizeY: random(10,60),
+      rotationSpeed: random(-0.05,0.05),
+      fadeRate: random(1,3),
+      colors: [
+        [255,0,0],[0,255,0],[0,0,255],[255,255,0],
+        [255,128,0],[128,0,255],[0,255,255]
+      ]
+    };
+  });
 }
 
 function draw() {
-  background(0);
-  for (let i = shapes.length - 1; i >= 0; i--) {
+  background(0,50);
+
+  // Draw shapes
+  for (let i = shapes.length-1; i>=0; i--) {
     let s = shapes[i];
-    s.x += s.vx;
-    s.y += s.vy;
+    fill(s.color[0],s.color[1],s.color[2],s.alpha);
+    push();
+    translate(s.x, s.y);
+    rotate(s.angle);
+    ellipse(0,0,s.sizeX,s.sizeY);
+    pop();
 
-    let level = s.amp.getLevel();
-    let ampScale = map(level, 0, 0.3, 0.5, 2);
+    s.alpha -= s.fadeRate;
+    s.angle += s.rotationSpeed;
 
-    // Draw trail
-    s.trail.push({x: s.x, y: s.y, opacity: 255});
-    if (s.trail.length > 30) s.trail.shift();
-    for (let t of s.trail) {
-      fill(255, t.opacity);
-      ellipse(t.x, t.y, 20 * ampScale);
-      t.opacity -= 6; // slower fade for longer trails
-    }
+    if(s.alpha <=0) shapes.splice(i,1);
+  }
 
-    // Glow
-    if (s.glow > 0) {
-      fill(255, 50, 50, s.glow); // stronger red glow
-      ellipse(s.x, s.y, 36 * ampScale); // slightly bigger glow
-      s.glow *= 0.92; // slower decay for more lingering glow
-    }
-
-    // Shape outline (1.5px for more visibility)
-    stroke(255);
-    strokeWeight(1.5);
-    fill(255, s.opacity);
-    ellipse(s.x, s.y, 30 * ampScale);
-    noStroke();
-
-    s.opacity -= 1;
-    if (s.opacity <= 0) {
-      s.osc.amp(0, 1.5); // smooth fade
-      setTimeout(() => s.osc.stop(), 1600);
-      shapes.splice(i, 1);
-      continue;
-    }
+  // Draw fading text
+  for(let t of texts){
+    fill(255,t.alpha);
+    text(t.text, width/2, 100);
+    if(t.alpha>0) t.alpha-=2;
   }
 }
 
 function keyPressed() {
-  userStartAudio();
-  let k = key.toUpperCase();
-  if (!keyMap[k]) return;
+  if (!activeKeys[key]) {
+    activeKeys[key]=true;
 
-  let freq = keyMap[k];
-  let osc = new p5.Oscillator('triangle');
-  osc.freq(freq);
-  osc.start();
-  osc.amp(0.3, 0.05);
+    let pan = map(mouseX,0,width,-1,1);
 
-  // Slight detune for dreaminess
-  osc.freq(freq * (1 + random(-0.002, 0.002)));
+    if(sounds[key]){
+      let s = sounds[key];
+      s.osc.freq(random(200,800));
+      s.osc.pan(pan);
+      s.env.play(s.osc);
+    }
 
-  // Low-pass filter
-  let filter = new p5.LowPass();
-  filter.freq(1200);
-  osc.disconnect();
-  osc.connect(filter);
+    if(shapesMap[key]){
+      let shp = shapesMap[key];
+      shapes.push({
+        x: random(width),
+        y: random(height),
+        sizeX: shp.sizeX,
+        sizeY: shp.sizeY,
+        color: random(shp.colors),
+        alpha: 255,
+        fadeRate: shp.fadeRate,
+        angle: random(TWO_PI),
+        rotationSpeed: shp.rotationSpeed
+      });
+    }
+  }
+}
 
-  reverb.process(filter, 2, 2); // shared global reverb
-
-  let amp = new p5.Amplitude();
-  amp.setInput(osc);
-
-  let s = {
-    x: random(width),
-    y: random(height),
-    vx: random(-2, 2),
-    vy: random(-2, 2),
-    osc: osc,
-    amp: amp,
-    opacity: 255,
-    trail: [],
-    glow: 250 // stronger and more persistent glow
-  };
-
-  shapes.push(s);
+function keyReleased() {
+  if(activeKeys[key]){
+    delete activeKeys[key];
+  }
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+}
+
+function mousePressed() {
+  userStartAudio();
 }
