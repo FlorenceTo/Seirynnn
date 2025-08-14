@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Interactive Sketch</title>
+  <title>3D Sound Sketch</title>
+  <!-- Load p5.js and p5.sound -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/addons/p5.sound.min.js"></script>
   <style>
     html, body {
       margin: 0;
@@ -10,14 +13,20 @@
       overflow: hidden;
       background: black;
     }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 20px;
+      width: 100%;
+      text-align: center;
+      color: white;
+      font-size: 24px;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
-  <!-- p5.js libraries -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/addons/p5.sound.min.js"></script>
-
-  <!-- Sketch -->
+  <div id="info">Press any key to start the sound</div>
   <script src="sketch.js"></script>
 </body>
 </html>
